@@ -248,6 +248,14 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(ctrl)
 
+        # ---- Big note display in center ----
+        self.big_note_label = QLabel("—")
+        self.big_note_label.setAlignment(Qt.AlignCenter)
+        font = QFont("Monospace", 72)
+        self.big_note_label.setFont(font)
+        self.big_note_label.setStyleSheet("color: white; background-color: #1a1a1a; padding: 10px;")
+        layout.addWidget(self.big_note_label)
+
         # ---- Scrollable bar chart ----
         self.bar_chart = BarChart()
         self.scroll = QScrollArea()
@@ -379,6 +387,13 @@ class MainWindow(QMainWindow):
                 f"{'+' if cents > 0 else ''}{cents:.0f}¢  "
                 f"conf:{conf:.0%}"
             )
+
+            # Big note display
+            color = cents_to_color(abs(cents), self.green_pct, self.yellow_pct, self.red_pct)
+            self.big_note_label.setText(note_name)
+            self.big_note_label.setStyleSheet(
+                f"color: {color.name()}; background-color: #1a1a1a; padding: 10px;"
+            )
         else:
             # No pitch
             self.consecutive_silence += 1
@@ -386,6 +401,10 @@ class MainWindow(QMainWindow):
                 self._close_bar()
             self.status_label.setText(
                 f"Silence — waiting..."
+            )
+            self.big_note_label.setText("—")
+            self.big_note_label.setStyleSheet(
+                "color: white; background-color: #1a1a1a; padding: 10px;"
             )
 
 
