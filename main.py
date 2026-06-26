@@ -97,9 +97,17 @@ class BarChart(QWidget):
             painter.drawRect(rect)
 
             painter.setPen(QColor(255, 255, 255))
-            font = QFont("Monospace", 10)
+            font = QFont("Monospace", 16)
             painter.setFont(font)
-            painter.drawText(rect, Qt.AlignCenter, bar.note_name)
+            # Draw note name one character per line, centered vertically
+            chars = list(bar.note_name)
+            line_h = 20
+            total_h = len(chars) * line_h
+            start_y = by + (bh - total_h) / 2
+            for ci, ch in enumerate(chars):
+                cy = start_y + ci * line_h
+                char_rect = QRectF(x, cy, bw, line_h)
+                painter.drawText(char_rect, Qt.AlignCenter, ch)
 
             x += bw + self.BAR_GAP
 
