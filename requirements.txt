@@ -1,0 +1,9 @@
+cffi==2.0.0
+numpy==2.2.6
+pyalsaaudio==0.11.0
+pycparser==3.0
+pyqt5==5.15.11
+pyqt5-qt5==5.15.19
+pyqt5-sip==12.18.0
+scipy==1.15.3
+sounddevice==0.5.5
