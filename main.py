@@ -58,15 +58,14 @@ class BarChart(QWidget):
     """Horizontal scrolling bar chart of detected notes."""
     MIN_BAR_W = 20
     MAX_BAR_W = 120
-    HEIGHT_SCALE = 3.0      # pixels per MIDI step
     MIDI_MIN = 55           # G3 — violin lowest
     MIDI_MAX = 88           # E7 — violin highest
     BAR_GAP = 2
-    LABEL_MARGIN = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.bars = []          # list of BarData
+        self.bars = []          # list of BarData — final consolidated bars
+        self.temp_bars = []     # list of BarData — live temporal bars
         self._total_w = 400
         self.setMinimumHeight(300)
 
@@ -82,9 +81,9 @@ class BarChart(QWidget):
         grad.setColorAt(1, QColor(40, 40, 40))
         painter.fillRect(QRect(0, 0, w, h), QBrush(grad))
 
-        # Draw bars
+        # Draw all bars (temp first, then final — same rendering)
         x = 0
-        for bar in self.bars:
+        for bar in self.temp_bars + self.bars:
             bw = self._bar_width(bar.duration_ms)
             bh = self._bar_height(bar.midi, h)
             by = h - bh - 20
@@ -99,7 +98,6 @@ class BarChart(QWidget):
             painter.setPen(QColor(255, 255, 255))
             font = QFont("Monospace", 16)
             painter.setFont(font)
-            # Draw note name one character per line, centered vertically
             chars = list(bar.note_name)
             line_h = 20
             total_h = len(chars) * line_h
@@ -123,13 +121,29 @@ class BarChart(QWidget):
 
     def add_bar(self, bar):
         self.bars.append(bar)
-        tw = sum(self._bar_width(b.duration_ms) + self.BAR_GAP for b in self.bars)
+        self._recalc_size()
+
+    def add_temp_bar(self, midi, note_name, freq, cents, green_pct, yellow_pct, red_pct):
+        """Add a thin temporal bar for a single detection tick (1ms → MIN_BAR_W)."""
+        bar = BarData(midi, note_name, freq, cents, 1,
+                      green_pct, yellow_pct, red_pct)
+        self.temp_bars.append(bar)
+        self._recalc_size()
+
+    def clear_temp_bars(self):
+        self.temp_bars.clear()
+        self._recalc_size()
+
+    def _recalc_size(self):
+        all_bars = self.temp_bars + self.bars
+        tw = sum(self._bar_width(b.duration_ms) + self.BAR_GAP for b in all_bars)
         self._total_w = max(tw, 400)
         self.setMinimumWidth(self._total_w)
         self.update()
 
     def reset(self):
         self.bars.clear()
+        self.temp_bars.clear()
         self._total_w = 400
         self.setMinimumWidth(400)
         self.update()
@@ -306,7 +320,7 @@ class MainWindow(QMainWindow):
             self._close_bar()
 
     def _close_bar(self):
-        """Finalize current bar and add to chart."""
+        """Finalize current bar: replace all temporal bars with one consolidated bar."""
         if self.current_bar is not None:
             elapsed = self.elapsed_ms - self.current_bar_start_ms
             bar = BarData(
@@ -317,8 +331,8 @@ class MainWindow(QMainWindow):
                 elapsed,
                 self.green_pct, self.yellow_pct, self.red_pct,
             )
+            self.bar_chart.clear_temp_bars()
             self.bar_chart.add_bar(bar)
-            # Defer scroll-to-end so layout has time to update
             QTimer.singleShot(0, self._scroll_to_end)
         self.current_bar = None
 
@@ -339,15 +353,17 @@ class MainWindow(QMainWindow):
             midi_i, cents = freq_to_midi(freq)
             note_name = midi_to_name(midi_i)
 
-            # If same note as current bar, just extend it
+            # If same note as current bar, add a temporal bar
             if self.current_bar is not None and self.current_bar_midi == midi_i:
-                # Update running cents average
                 self.current_bar_cents = (self.current_bar_cents * 0.7) + (cents * 0.3)
                 self.current_bar_freq = freq
                 self.current_bar_conf = conf
-                # Don't add a new bar — just wait for close
+                self.bar_chart.add_temp_bar(
+                    midi_i, note_name, freq, cents,
+                    self.green_pct, self.yellow_pct, self.red_pct,
+                )
             else:
-                # Note changed — close previous bar, start new one
+                # Note changed — close previous bar (replaces temps with final), start new one
                 self._close_bar()
                 self.current_bar_midi = midi_i
                 self.current_bar_note = note_name
@@ -355,7 +371,7 @@ class MainWindow(QMainWindow):
                 self.current_bar_cents = cents
                 self.current_bar_conf = conf
                 self.current_bar_start_ms = self.elapsed_ms
-                self.current_bar = "active"  # non-None sentinel
+                self.current_bar = "active"
 
             # Status update
             self.status_label.setText(
