@@ -310,9 +310,13 @@ class MainWindow(QMainWindow):
                 self.green_pct, self.yellow_pct, self.red_pct,
             )
             self.bar_chart.add_bar(bar)
-            # Auto-scroll to newest
-            self.scroll.ensureWidgetVisible(self.bar_chart, x=1.0, y=0.0)
+            # Defer scroll-to-end so layout has time to update
+            QTimer.singleShot(0, self._scroll_to_end)
         self.current_bar = None
+
+    def _scroll_to_end(self):
+        sb = self.scroll.horizontalScrollBar()
+        sb.setValue(sb.maximum())
 
     def _tick(self):
         dt_ms = self.timer.interval()
