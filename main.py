@@ -41,6 +41,83 @@ def cents_to_color(cents_abs, green_pct, yellow_pct, red_pct):
         return NOTE_COLORS["missed"]
 
 
+class CentsMeter(QWidget):
+    """Semi-circular gauge showing cents deviation with a needle and big note name."""
+    def __init__(self, green_pct, yellow_pct, red_pct, parent=None):
+        super().__init__(parent)
+        self.green_pct = green_pct
+        self.yellow_pct = yellow_pct
+        self.red_pct = red_pct
+        self.cents = 0.0
+        self.note_name = "—"
+        self.setMinimumHeight(160)
+
+    def set_value(self, cents, note_name):
+        self.cents = cents
+        self.note_name = note_name
+        self.update()
+
+    def clear(self):
+        self.cents = 0.0
+        self.note_name = "—"
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = self.width()
+        h = self.height()
+
+        cx = w / 2
+        cy = h * 0.55
+        radius = min(w, h * 1.1) * 0.4
+
+        # Draw arc background
+        painter.setPen(QPen(QColor(60, 60, 60), 3))
+        painter.drawArc(QRectF(cx - radius, cy - radius, 2 * radius, 2 * radius),
+                         180 * 16, 180 * 16)  # 180° arc
+
+        # Determine color
+        color = cents_to_color(abs(self.cents), self.green_pct, self.yellow_pct, self.red_pct)
+
+        # Draw colored arc from center to needle position
+        angle = (self.cents / 50.0) * 90.0  # -50¢ → -90°, +50¢ → +90°
+        start_angle = 180  # leftmost
+        span_angle = angle  # degrees from center
+        painter.setPen(QPen(color, 3))
+        painter.drawArc(QRectF(cx - radius, cy - radius, 2 * radius, 2 * radius),
+                        180 * 16, int(span_angle * 16))
+
+        # Draw needle
+        needle_len = radius * 0.8
+        needle_angle = 90 + angle  # 0° = straight up, +90° = right
+        rad = math.radians(needle_angle)
+        nx = cx + needle_len * math.cos(rad)
+        ny = cy - needle_len * math.sin(rad)
+        painter.setPen(QPen(color, 3))
+        painter.drawLine(int(cx), int(cy), int(nx), int(ny))
+
+        # Center dot
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QRectF(cx - 4, cy - 4, 8, 8))
+
+        # Note name below needle
+        painter.setPen(QColor(255, 255, 255))
+        font = QFont("Monospace", 48)
+        painter.setFont(font)
+        painter.drawText(QRectF(0, h * 0.7, w, h * 0.3), Qt.AlignCenter, self.note_name)
+
+        # Cents label
+        if self.note_name != "—":
+            painter.setPen(QColor(180, 180, 180))
+            font = QFont("Monospace", 14)
+            painter.setFont(font)
+            cents_str = f"{'+' if self.cents > 0 else ''}{self.cents:.0f}¢"
+            painter.drawText(QRectF(0, cy + radius + 10, w, 24), Qt.AlignCenter, cents_str)
+
+        painter.end()
+
+
 class PitchReference(QWidget):
     """Right-side panel showing scale note segments and a live cursor square."""
     def __init__(self, scale_notes, parent=None):
@@ -300,13 +377,10 @@ class MainWindow(QMainWindow):
         hsplit.addWidget(self.pitch_ref)
         layout.addLayout(hsplit, 1)
 
-        # Big note display
-        self.big_note_label = QLabel("—")
-        self.big_note_label.setAlignment(Qt.AlignCenter)
-        font = QFont("Monospace", 48)
-        self.big_note_label.setFont(font)
-        self.big_note_label.setStyleSheet("color: white; background-color: #1a1a1a; padding: 6px;")
-        layout.addWidget(self.big_note_label)
+        # Cents deviation meter with big note name
+        self.cents_meter = CentsMeter(self.green_pct, self.yellow_pct, self.red_pct)
+        self.cents_meter.setMinimumHeight(160)
+        layout.addWidget(self.cents_meter)
 
         # Status
         self.status_label = QLabel("Select scale, set BPM, press Start")
@@ -337,14 +411,17 @@ class MainWindow(QMainWindow):
     def _on_green_change(self, val):
         self.green_pct = val
         self.green_label.setText(f"{val}¢")
+        self.cents_meter.green_pct = val
 
     def _on_yellow_change(self, val):
         self.yellow_pct = val
         self.yellow_label.setText(f"{val}¢")
+        self.cents_meter.yellow_pct = val
 
     def _on_red_change(self, val):
         self.red_pct = val
         self.red_label.setText(f"{val}¢")
+        self.cents_meter.red_pct = val
 
     def _toggle(self):
         if self.running:
@@ -421,22 +498,15 @@ class MainWindow(QMainWindow):
                 f"conf:{conf:.0%}"
             )
 
-            # Big note display
-            color = cents_to_color(abs(cents), self.green_pct, self.yellow_pct, self.red_pct)
-            self.big_note_label.setText(note_name)
-            self.big_note_label.setStyleSheet(
-                f"color: {color.name()}; background-color: #1a1a1a; padding: 6px;"
-            )
+            # Cents meter
+            self.cents_meter.set_value(cents, note_name)
         else:
             self.consecutive_silence += 1
             if self.consecutive_silence >= self.silence_threshold:
                 self._close_bar()
                 self.pitch_ref.clear_cursor()
             self.status_label.setText("Silence — waiting...")
-            self.big_note_label.setText("—")
-            self.big_note_label.setStyleSheet(
-                "color: white; background-color: #1a1a1a; padding: 6px;"
-            )
+            self.cents_meter.clear()
 
 
 def main():
