@@ -64,8 +64,7 @@ class BarChart(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.bars = []          # list of BarData — final consolidated bars
-        self.temp_bars = []     # list of BarData — live temporal bars
+        self.bars = []          # list of BarData
         self._total_w = 400
         self.setMinimumHeight(300)
 
@@ -81,9 +80,8 @@ class BarChart(QWidget):
         grad.setColorAt(1, QColor(40, 40, 40))
         painter.fillRect(QRect(0, 0, w, h), QBrush(grad))
 
-        # Draw all bars (temp first, then final — same rendering)
         x = 0
-        for bar in self.temp_bars + self.bars:
+        for bar in self.bars:
             bw = self._bar_width(bar.duration_ms)
             bh = self._bar_height(bar.midi, h)
             by = h - bh - 20
@@ -123,27 +121,14 @@ class BarChart(QWidget):
         self.bars.append(bar)
         self._recalc_size()
 
-    def add_temp_bar(self, midi, note_name, freq, cents, green_pct, yellow_pct, red_pct):
-        """Add a thin temporal bar for a single detection tick (1ms → MIN_BAR_W)."""
-        bar = BarData(midi, note_name, freq, cents, 1,
-                      green_pct, yellow_pct, red_pct)
-        self.temp_bars.append(bar)
-        self._recalc_size()
-
-    def clear_temp_bars(self):
-        self.temp_bars.clear()
-        self._recalc_size()
-
     def _recalc_size(self):
-        all_bars = self.temp_bars + self.bars
-        tw = sum(self._bar_width(b.duration_ms) + self.BAR_GAP for b in all_bars)
+        tw = sum(self._bar_width(b.duration_ms) + self.BAR_GAP for b in self.bars)
         self._total_w = max(tw, 400)
         self.setMinimumWidth(self._total_w)
         self.update()
 
     def reset(self):
         self.bars.clear()
-        self.temp_bars.clear()
         self._total_w = 400
         self.setMinimumWidth(400)
         self.update()
@@ -328,7 +313,7 @@ class MainWindow(QMainWindow):
             self._close_bar()
 
     def _close_bar(self):
-        """Finalize current bar: replace all temporal bars with one consolidated bar."""
+        """Finalize current bar and add it to the chart."""
         if self.current_bar is not None:
             elapsed = self.elapsed_ms - self.current_bar_start_ms
             bar = BarData(
@@ -339,7 +324,6 @@ class MainWindow(QMainWindow):
                 elapsed,
                 self.green_pct, self.yellow_pct, self.red_pct,
             )
-            self.bar_chart.clear_temp_bars()
             self.bar_chart.add_bar(bar)
             QTimer.singleShot(0, self._scroll_to_end)
         self.current_bar = None
@@ -361,17 +345,13 @@ class MainWindow(QMainWindow):
             midi_i, cents = freq_to_midi(freq)
             note_name = midi_to_name(midi_i)
 
-            # If same note as current bar, add a temporal bar
+            # If same note as current bar, just update the running average
             if self.current_bar is not None and self.current_bar_midi == midi_i:
                 self.current_bar_cents = (self.current_bar_cents * 0.7) + (cents * 0.3)
                 self.current_bar_freq = freq
                 self.current_bar_conf = conf
-                self.bar_chart.add_temp_bar(
-                    midi_i, note_name, freq, cents,
-                    self.green_pct, self.yellow_pct, self.red_pct,
-                )
             else:
-                # Note changed — close previous bar (replaces temps with final), start new one
+                # Note changed — close previous bar, start new one
                 self._close_bar()
                 self.current_bar_midi = midi_i
                 self.current_bar_note = note_name
