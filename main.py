@@ -19,7 +19,7 @@ VISIBLE_SCALES = {
     if k in ("C Major", "D Major", "A Major", "Bb Major", "G Major")
 }
 
-DEFAULT_GREEN_PCT = 5
+DEFAULT_GREEN_PCT = 10
 DEFAULT_YELLOW_PCT = 20
 DEFAULT_RED_PCT = 50
 
