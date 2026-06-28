@@ -35,3 +35,23 @@ SCALES = {
 def get_scale_notes(scale_name):
     mids = SCALES[scale_name]
     return [(m, midi_to_name(m), midi_to_freq(m)) for m in mids]
+
+VIOLIN_MIDI_MIN = 55   # G3
+VIOLIN_MIDI_MAX = 100  # E7
+
+def get_full_scale_notes(scale_name):
+    """Return all notes in the selected scale across the full violin range (G3-E7)."""
+    # Extract the unique note classes from the scale definition
+    mids = SCALES[scale_name]
+    # Take the first 7 unique classes (skip the octave duplicate)
+    classes = set()
+    for m in mids:
+        classes.add(m % 12)
+        if len(classes) == 7:
+            break
+
+    result = []
+    for m in range(VIOLIN_MIDI_MIN, VIOLIN_MIDI_MAX + 1):
+        if m % 12 in classes:
+            result.append((m, midi_to_name(m), midi_to_freq(m)))
+    return result

@@ -10,7 +10,7 @@ from PyQt5.QtGui import (
     QPainter, QColor, QFont, QPen, QBrush, QLinearGradient, QPainterPath,
 )
 
-from scales import get_scale_notes, midi_to_name, freq_to_midi, SCALES
+from scales import get_full_scale_notes, midi_to_name, freq_to_midi, SCALES
 from pitch import yin
 from audio import AudioCapture
 
@@ -48,8 +48,8 @@ class PitchReference(QWidget):
         self.scale_notes = scale_notes
         self.n = len(scale_notes)
         self.cursor_midi = None   # current detected midi
-        self.setFixedWidth(100)
-        self.setMinimumHeight(300)
+        self.setFixedWidth(80)
+        self.setMinimumHeight(500)
 
     def set_cursor(self, midi):
         self.cursor_midi = midi
@@ -78,7 +78,7 @@ class PitchReference(QWidget):
             painter.setPen(QColor(180, 180, 180))
             font = QFont("Monospace", 11)
             painter.setFont(font)
-            painter.drawText(QRectF(4, y, w - 8, seg_h), Qt.AlignRight | Qt.AlignVCenter, name)
+            painter.drawText(QRectF(2, y, w - 4, seg_h), Qt.AlignRight | Qt.AlignVCenter, name)
 
         # Draw cursor square if pitch detected
         if self.cursor_midi is not None:
@@ -111,7 +111,7 @@ class BarChart(QWidget):
         self.n = len(scale_notes)
         self.bars = []          # list of (midi, duration_ms, color)
         self._total_w = 600
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(500)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -170,22 +170,22 @@ class BarChart(QWidget):
         self.update()
 
     def minimumSizeHint(self):
-        return QSize(self._total_w, 300)
+        return QSize(self._total_w, 500)
 
     def sizeHint(self):
-        return QSize(self._total_w, 300)
+        return QSize(self._total_w, 500)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Violin Practice Assistant")
-        self.setMinimumSize(900, 550)
+        self.setMinimumSize(900, 650)
 
         self.sr = 48000
         self.bpm = 60
         self.scale_name = "C Major"
-        self.scale_notes = get_scale_notes(self.scale_name)
+        self.scale_notes = get_full_scale_notes(self.scale_name)
 
         self.green_pct = DEFAULT_GREEN_PCT
         self.yellow_pct = DEFAULT_YELLOW_PCT
@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
 
     def _on_scale_change(self, name):
         self.scale_name = name
-        self.scale_notes = get_scale_notes(name)
+        self.scale_notes = get_full_scale_notes(name)
         self.bar_chart.scale_notes = self.scale_notes
         self.bar_chart.n = len(self.scale_notes)
         self.bar_chart.reset()
