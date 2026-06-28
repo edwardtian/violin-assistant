@@ -48,16 +48,29 @@ class PitchReference(QWidget):
         self.scale_notes = scale_notes
         self.n = len(scale_notes)
         self.cursor_midi = None   # current detected midi
+        self.cursor_cents = 0.0   # cents offset for cursor position
         self.setFixedWidth(80)
         self.setMinimumHeight(500)
 
-    def set_cursor(self, midi):
+    def set_cursor(self, midi, cents=0.0):
         self.cursor_midi = midi
+        self.cursor_cents = cents
         self.update()
 
     def clear_cursor(self):
         self.cursor_midi = None
         self.update()
+
+    def _seg_y(self, i, seg_h):
+        """Reverse order: i=0 (G3) at bottom, i=n-1 (E7) at top."""
+        return (self.n - 1 - i) * seg_h
+
+    def _cents_offset(self, cents, seg_h):
+        """Map cents (-50..+50) to vertical offset within segment.
+        Sharp (+) moves up (negative y), flat (-) moves down (positive y)."""
+        max_off = seg_h / 2
+        clamped = max(-50.0, min(50.0, cents))
+        return -clamped / 50.0 * max_off
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -70,7 +83,7 @@ class PitchReference(QWidget):
         dark = QColor(25, 25, 25)
 
         for i, (midi, name, freq) in enumerate(self.scale_notes):
-            y = i * seg_h
+            y = self._seg_y(i, seg_h)
             color = half if i % 2 == 0 else dark
             painter.fillRect(QRectF(0, y, w, seg_h), QBrush(color))
 
@@ -82,16 +95,16 @@ class PitchReference(QWidget):
 
         # Draw cursor square if pitch detected
         if self.cursor_midi is not None:
-            # Find which segment this midi falls in (or nearest)
             seg_idx = -1
             for i, (midi, _, _) in enumerate(self.scale_notes):
                 if midi == self.cursor_midi:
                     seg_idx = i
                     break
             if seg_idx >= 0:
-                cy = seg_idx * seg_h
+                seg_y = self._seg_y(seg_idx, seg_h)
+                offset = self._cents_offset(self.cursor_cents, seg_h)
+                cy = seg_y + seg_h / 2 + offset - seg_h / 2
                 cs = seg_h
-                # Semi-transparent square at the right side
                 painter.setBrush(QColor(255, 255, 255, 60))
                 painter.setPen(QPen(QColor(255, 255, 255, 100), 2))
                 painter.drawRect(QRectF(w - cs, cy, cs, cs))
@@ -109,9 +122,19 @@ class BarChart(QWidget):
         super().__init__(parent)
         self.scale_notes = scale_notes
         self.n = len(scale_notes)
-        self.bars = []          # list of (midi, duration_ms, color)
+        self.bars = []          # list of (midi, duration_ms, cents, color)
         self._total_w = 600
         self.setMinimumHeight(500)
+
+    def _seg_y(self, i, seg_h):
+        """Reverse order: i=0 (G3) at bottom, i=n-1 (E7) at top."""
+        return (self.n - 1 - i) * seg_h
+
+    def _cents_offset(self, cents, seg_h):
+        """Map cents (-50..+50) to vertical offset within segment."""
+        max_off = seg_h / 2
+        clamped = max(-50.0, min(50.0, cents))
+        return -clamped / 50.0 * max_off
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -128,9 +151,8 @@ class BarChart(QWidget):
 
         # Draw bars
         x = 0
-        for midi, dur, color in self.bars:
+        for midi, dur, cents, color in self.bars:
             bw = self._bar_width(dur)
-            # Find segment index for this midi
             seg_idx = -1
             for i, (m, _, _) in enumerate(self.scale_notes):
                 if m == midi:
@@ -140,8 +162,10 @@ class BarChart(QWidget):
                 x += bw + self.BAR_GAP
                 continue
 
-            y = seg_idx * seg_h
-            bh = seg_h - 2  # slight gap from segment border
+            seg_y = self._seg_y(seg_idx, seg_h)
+            offset = self._cents_offset(cents, seg_h)
+            y = seg_y + seg_h / 2 + offset - seg_h / 2
+            bh = seg_h - 2
 
             rect = QRectF(x, y + 1, bw, bh)
             painter.setBrush(QBrush(color))
@@ -156,9 +180,9 @@ class BarChart(QWidget):
         w = int(duration_ms / 20)
         return max(self.MIN_BAR_W, min(w, self.MAX_BAR_W))
 
-    def add_bar(self, midi, duration_ms, color):
-        self.bars.append((midi, duration_ms, color))
-        tw = sum(self._bar_width(d) + self.BAR_GAP for _, d, _ in self.bars)
+    def add_bar(self, midi, duration_ms, cents, color):
+        self.bars.append((midi, duration_ms, cents, color))
+        tw = sum(self._bar_width(d) + self.BAR_GAP for _, d, _, _ in self.bars)
         self._total_w = max(tw, 600)
         self.setMinimumWidth(self._total_w)
         self.update()
@@ -358,7 +382,7 @@ class MainWindow(QMainWindow):
             color = cents_to_color(
                 abs(self.current_bar_cents), self.green_pct, self.yellow_pct, self.red_pct
             )
-            self.bar_chart.add_bar(self.current_bar_midi, elapsed, color)
+            self.bar_chart.add_bar(self.current_bar_midi, elapsed, self.current_bar_cents, color)
             QTimer.singleShot(0, self._scroll_to_end)
         self.current_bar = None
 
@@ -378,8 +402,8 @@ class MainWindow(QMainWindow):
             midi_i, cents = freq_to_midi(freq)
             note_name = midi_to_name(midi_i)
 
-            # Update cursor
-            self.pitch_ref.set_cursor(midi_i)
+            # Update cursor with cents offset
+            self.pitch_ref.set_cursor(midi_i, cents)
 
             if self.current_bar is not None and self.current_bar_midi == midi_i:
                 self.current_bar_cents = (self.current_bar_cents * 0.7) + (cents * 0.3)
